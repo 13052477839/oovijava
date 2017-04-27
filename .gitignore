@@ -1,0 +1,4 @@
+#ignore lib dir
+lib
+#ignore build dir
+build

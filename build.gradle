@@ -1,0 +1,61 @@
+apply plugin: 'java'
+apply plugin: 'distribution'
+
+sourceCompatibility = '1.6'
+targetCompatibility = '1.6'
+
+version = '1.1'
+
+repositories {
+    mavenCentral()
+    mavenLocal()
+}
+
+dependencies {
+    // yavijave dependencies
+    compile 'org.dom4j:dom4j:2.0.0'
+    compile 'com.toastcoders:yavijava:6.0.04'
+    compile 'javax.mail:mail:1.4.7'
+    compile 'javax.servlet:javax.servlet-api:3.1.0'
+    // gson
+    compile 'com.google.code.gson:gson:2.2.4'
+    // OO sdk
+    compile files('lib/ContentCommons.jar')
+    compile files('lib/JRAS-sdk.jar')
+}
+
+distributions {
+    main {
+        contents {
+            into('libs') {
+                from configurations.runtime
+                exclude "JRAS-sdk.jar"
+                exclude "ContentCommons.jar"
+            }
+            into('') {
+                from configurations.runtime.allArtifacts.files
+                from 'LICENSE.txt' 
+            }
+        }
+    }
+}
+
+sourceSets {
+    main {
+        java {
+            srcDirs = ['src']
+        }
+    }
+}
+
+task exec(type:JavaExec) {
+    standardInput = System.in
+    // set default main class
+    if (!project.hasProperty("main_class")) {
+        ext.main_class = "main"
+    }
+    main = main_class
+    classpath = sourceSets.main.runtimeClasspath
+}
+
+build.dependsOn distZip
