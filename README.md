@@ -2,7 +2,9 @@
 
 Hp Openview Actions based on the ViJava library
 
-Please place the HP OO SDK libraries inside the `./lib` folder
+Please place the HP OO SDK libraries inside the `./lib` folder:
+  - JRAS-sdk.jar
+  - ContentCommons.jar
 
 # Using
 
