@@ -2,3 +2,5 @@
 lib
 #ignore build dir
 build
+#ignore masked files
+.
