@@ -1,5 +1,7 @@
 #ignore lib dir
 lib
+#ignore bin
+bin
 #ignore build dir
 build
 #ignore masked files
