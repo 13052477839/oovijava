@@ -133,9 +133,9 @@ public class GetDatastoreCluster implements IAction {
 			// get summary
 		    StoragePodSummary summary = pod.getSummary();
 			// get the datastore with the largest free space percentage
-			Datastore largestFree;
-			float largestFreePc;
-			float largestFreeSpace;
+			Datastore largestFree = null;
+			double largestFreePc = 0.0;
+			long largestFreeSpace = 0;
 			ManagedEntity[] childs = pod.getChildEntity();
 			for(ManagedEntity child: childs) {
 				// find child object of type datastore
