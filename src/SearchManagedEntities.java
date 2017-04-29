@@ -260,6 +260,7 @@ public class SearchManagedEntities implements IAction {
 		return finalResult;
 	}	
 	
+	// Depercated by retrieveObjectPropertiesEx... i think
 	@SuppressWarnings("deprecation")
 	private static ObjectContent[] retrieveObjectContents(String[][] typeinfo, boolean recurse, ServiceInstance si, ManagedEntity rootEntity) throws InvalidProperty, RuntimeFault, RemoteException
 	{

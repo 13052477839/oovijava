@@ -144,6 +144,4 @@ public class SetPowerState implements IAction {
 		
 		return actionTemplate;
 	}
-	
 }
-
