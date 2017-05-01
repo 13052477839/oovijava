@@ -81,8 +81,7 @@ public class GetDatastoreCluster implements IAction {
     public static String getDatastoreCluster(String server, String username, String password,
 			String name, String folder, String columnSeparator, String rowSeparator) throws Exception {
 		// set default values
-		if (name == null || name == "") { name = ".*"; }
-		if (folder == null) { folder = ""; }
+		if (name.isEmpty()) { name = ".*"; }
 		//prepare folder - remove starting and trailing '/'
 		folder = folder.replaceAll("/$|^/", "");
 		String[] folders = folder.split("/");
@@ -94,37 +93,49 @@ public class GetDatastoreCluster implements IAction {
 		Folder rootFolder = si.getRootFolder();
 		// move the rootFolder to desired location
 		if (folders.length > 0) {
-			int level = 0; 
-			String matched = "";
-			while (level < folders.length) {
-				//search childs of current folder for next matching folders
-				ManagedEntity[] childs = rootFolder.getChildEntity();
-				for(ManagedEntity child: childs) {
-					if (child instanceof Folder && child.getName().equals(folders[level])) {
-						// match found
-						// update matched, level and set rootFolder
-						matched += "/" + folders[level++]; 
-						rootFolder = (Folder)child;
-						break;
+			if (!folders[0].isEmpty()) {
+				int level = 0; 
+				String matched = "";
+				while (level < folders.length) {
+					//search childs of current folder for next matching folders
+					ManagedEntity[] childs = rootFolder.getChildEntity();
+					for(ManagedEntity child: childs) {
+						if (child instanceof Folder && child.getName().equals(folders[level])) {
+							// match found
+							// update matched, level and set rootFolder
+							matched += "/" + folders[level++]; 
+							rootFolder = (Folder)child;
+							break;
+						}
 					}
+					matched = matched.replaceAll("/$|^/", "");
+					throw new Exception("Could not find folder '" + folder + "' matched '" + matched + "'" );
 				}
-				matched = matched.replaceAll("/$|^/", "");
-				throw new Exception("Could not find folder " + folder + " matched " + matched );
 			}
 		}
 		// Get the inventory navigator
 		InventoryNavigator navigator = new InventoryNavigator(rootFolder);
 		// Get proper references for variables on the deploy task.
 		// Search for storage pods in folder
-		StoragePod[] pods = (StoragePod[]) navigator.searchManagedEntities("StoregePod");
+		//ManagedEntity[] pods = navigator.searchManagedEntities("StoragePod");
+		//More precise search
+		String[][] typeinfo = new String[1][5];
+		typeinfo[0][0] = "StoragePod";
+		typeinfo[0][1] = "name";
+		typeinfo[0][2] = "childEntity";
+		typeinfo[0][3] = "summary.freeSpace";
+		typeinfo[0][4] = "summary.capacity";
+		ManagedEntity[] pods = navigator.searchManagedEntities(typeinfo,true);
 		if (pods.length == 0) {
 			throw new Exception("No data store clusters found.");
 		}
 		// collect matching storage pods
 		HashSet<StoragePod> matchedpods = new HashSet<StoragePod>();
-		for(StoragePod pod: pods) {
-			if (pod.getName().matches(name)) {
-				matchedpods.add(pod);
+		for(ManagedEntity pod: pods) {
+			if (pod instanceof StoragePod) {
+				if (pod.getName().matches(name)) {
+					matchedpods.add((StoragePod)pod);
+				}
 			}
 		}
 		// prepare the resulting table
@@ -136,17 +147,33 @@ public class GetDatastoreCluster implements IAction {
 			Datastore largestFree = null;
 			double largestFreePc = 0.0;
 			long largestFreeSpace = 0;
-			ManagedEntity[] childs = pod.getChildEntity();
-			for(ManagedEntity child: childs) {
+			//ManagedEntity[] childs = pod.getChildEntity();
+			//Gather informations about child Datastores
+			String[][] dstypeinfo = new String[1][5];
+			dstypeinfo[0][0] = "Datastore";
+			dstypeinfo[0][1] = "summary.freeSpace";
+			dstypeinfo[0][2] = "summary.capacity";
+			dstypeinfo[0][3] = "summary.maintenanceMode";
+			dstypeinfo[0][4] = "summary.accessible";
+			// Get the inventory navigator
+			InventoryNavigator dsnavigator = new InventoryNavigator(pod);
+			ManagedEntity[] ds = dsnavigator.searchManagedEntities(dstypeinfo,true);
+			for(ManagedEntity child: ds) {
 				// find child object of type datastore
 				if (child instanceof Datastore) {
 					Datastore toCheck = (Datastore)child;
 					// get the summary
 					DatastoreSummary toCheckSummary = toCheck.getSummary();
 					// check if accessible otherwise ignore
-					if (!toCheckSummary.accessible) { continue;	}
+					if (!toCheckSummary.accessible) { 
+						System.out.println("Datastore not accessible");
+						continue;	
+					}
 					// check if in maintenance otherwise ignore
-					if (toCheckSummary.getMaintenanceMode()!="normal") { continue; }
+					if (!"normal".equals(toCheckSummary.getMaintenanceMode())) {
+						System.out.println("Datastore state: " + toCheckSummary.getMaintenanceMode());
+						continue;
+					}
 					float toCheckFreePc = toCheckSummary.getFreeSpace() / toCheckSummary.getCapacity();
 					if (largestFree == null) {
 						largestFree = toCheck;
@@ -161,6 +188,9 @@ public class GetDatastoreCluster implements IAction {
 					}
 				}
 			}
+			if (largestFree == null) {
+				continue;
+			}
 			// generate the path to simplify further searches
 			String path = "";
 			ManagedEntity mo = pod;
@@ -170,7 +200,7 @@ public class GetDatastoreCluster implements IAction {
 			}
 			path = path.replaceAll("/$|^/","");
 			if (largestFree == null) {
-				throw new Exception("no usable datastore found in datastore cluster");
+				continue;
 			}
 			strresult += rowSeparator 
 			    + "moref:" + pod.getMOR().toString() + columnSeparator 
@@ -269,7 +299,7 @@ public class GetDatastoreCluster implements IAction {
 			System.out.println("Name: " + name);
 			System.out.println("Folder: " + folder);
 			System.out.println("------------------------------");
-			System.out.println("Confirm (y/n):");
+			System.out.print("Confirm (y/n):");
 			String confirm = br.readLine();
 			if (confirm.equals("y")) {
 				String objects = getDatastoreCluster(server,username,password,name,folder,";","\n");

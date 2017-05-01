@@ -2,6 +2,9 @@
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.URL;
+
+import javax.naming.ldap.ManageReferralControl;
+
 import com.iconclude.webservices.extensions.java.interfaces.*;
 import com.iconclude.webservices.extensions.java.types.*;
 import com.iconclude.webservices.extensions.java.util.*;
@@ -24,9 +27,9 @@ public class DeployCustomVM implements IAction {
 			+"-Username: vCenter username\n"
 			+"-Password: vCenter password\n"
 			+"-Name: name of the VM\n"
-			+"-Template: VM template to use\n"
+			+"-Template: VM template to use (name or reference)\n"
 			+"-Cluster: cluster where to deploy the VM\n"
-			+"-Datasstore: datastore to use\n"
+			+"-Datasstore or datastore cluster: datastore or datastore cluster to use (name or reference)\n"
 			+"-Provisioning: provisionning type (thin/thick: default thick)\n"
 			+"-ResourcePool: ressource pool where the VM will be placed (default: resource)\n"
 			+"-Folder: folder where to place the VM (default: /)\n"
@@ -159,6 +162,20 @@ public class DeployCustomVM implements IAction {
 		return actionTemplate;
 	}
 
+	public static ManagedObjectReference stringToMor(String reference) throws Exception {
+		if (reference.matches("^[A-Za-z0-9]:[A-Za-z0-9-]+$")) {
+			ManagedObjectReference mor = new ManagedObjectReference();
+		    String[] vmrefs = reference.split(":"); 
+			if (vmrefs.length != 2) {
+				throw new Exception("Detected VM reference incorrect");
+			}
+			mor.setType(vmrefs[0]);
+			mor.setVal(vmrefs[1]);
+			return mor;
+		}
+		return null;
+	}
+
 	public static Task deployCustomVM(String server, String username, String password,
 			String name, String template, String cluster, String datastore, String provisionning,
 			String resourcepool, String folder, String customization, String ipaddress) throws Exception {
@@ -191,7 +208,12 @@ public class DeployCustomVM implements IAction {
 		InventoryNavigator navigator = new InventoryNavigator(rootFolder);
 		// Get proper referances for variables on the deploy task.
 		// Search for specified template
-		VirtualMachine vm = (VirtualMachine) navigator.searchManagedEntity("VirtualMachine",template);
+		VirtualMachine vm = null;
+		if (template.matches("^VirtualMachine:[A-Za-z0-9-]+$")) {
+			vm = new VirtualMachine(si.getServerConnection(),stringToMor(template));
+		} else {
+			vm = (VirtualMachine) navigator.searchManagedEntity("VirtualMachine",template);
+		}
 		if (vm==null) {
 			throw new Exception("temlpate not found.");
 		}
@@ -199,22 +221,58 @@ public class DeployCustomVM implements IAction {
 			throw new Exception("VM found by template name is not a template!");
 		}
 		// Search for specified datastore
-		Datastore ds = (Datastore) navigator.searchManagedEntity("Datastore",datastore);
+		Datastore ds = null;
+		if (datastore.matches("^Datastore:[A-Za-z0-9-]+$")) {
+			ds = new Datastore(si.getServerConnection(),stringToMor(datastore));
+		} else {
+			ds = (Datastore) navigator.searchManagedEntity("Datastore",datastore);
+		}
 		if (ds==null) {
 			throw new Exception("Provided datastore not found.");
 		}
 		// Search the resource pool
-		ResourcePool rp = (ResourcePool) navigator.searchManagedEntity("ResourcePool",resourcepool);
+		ResourcePool rp = null;
+		if (resourcepool.matches("^ResourcePool:[A-Za-z0-9-]+$")) {
+			rp = new ResourcePool(si.getServerConnection(),stringToMor(resourcepool));
+		} else { 
+			rp = (ResourcePool) navigator.searchManagedEntity("ResourcePool",resourcepool);
+		}
 		if (rp==null) {
 			throw new Exception("Provided resourcepool not found.");
 		}
 		// Search for the right folder
-		Folder fld = rootFolder;
-		String[] folders = folder.split("/");
+		/* seems strange to search using inventorynavigator...
 		InventoryNavigator currentnavigator = new InventoryNavigator(rootFolder);
 		for (String subfolder : folders) {
 			fld  = (Folder) currentnavigator.searchManagedEntity("Folder", subfolder);
 			currentnavigator = new InventoryNavigator(fld);
+		}
+		*/
+		// let's search folder style... (plus no search if managed object rovided)
+		Folder fld = null;
+		if (folder.matches("^Folder:[A-Za-z0-9-]+$")) {
+			fld = new Folder(si.getServerConnection(),stringToMor(folder));
+		} else {
+			Folder searched = rootFolder;
+			String[] folders = folder.split("/");
+			for (String subfolder: folders) {
+				Boolean found = false;
+				for(ManagedEntity current: searched.getChildEntity()) {
+					if (current instanceof Folder) {
+						if (subfolder.equals(current.getName())) {
+							searched = (Folder)current;
+							found = true;
+							break;
+						}
+					}
+				}
+				if (!found) {
+					// looped trought managed entities but no match...
+					searched = null;
+					break;
+				}
+			}
+			fld = searched;
 		}
 		if (fld==null) {
 			throw new Exception("Provided folder not found.");
