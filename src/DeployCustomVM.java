@@ -206,38 +206,27 @@ public class DeployCustomVM implements IAction {
 		Folder rootFolder = si.getRootFolder();
 		// Get the inventory navigator
 		InventoryNavigator navigator = new InventoryNavigator(rootFolder);
-		// Get proper referances for variables on the deploy task.
-		// Search for specified template
-		VirtualMachine vm = null;
+		// search target references
+		// vm: no check that this is a template...
+		ManagedObjectReference vm_ref = null;
 		if (template.matches("^VirtualMachine:[A-Za-z0-9-]+$")) {
-			vm = new VirtualMachine(si.getServerConnection(),stringToMor(template));
+			vm_ref = stringToMor(template);
 		} else {
-			vm = (VirtualMachine) navigator.searchManagedEntity("VirtualMachine",template);
+			VirtualMachine vm = (VirtualMachine) navigator.searchManagedEntity("VirtualMachine",template);
+			vm_ref = vm.getMOR();
 		}
-		if (vm==null) {
-			throw new Exception("temlpate not found.");
+		if (vm_ref == null) {
+			throw new Exception("Virtual Machine template not found.");
 		}
-		if (!vm.getConfig().template) {
-			throw new Exception("VM found by template name is not a template!");
-		}
-		// Search for specified datastore
-		Datastore ds = null;
-		if (datastore.matches("^Datastore:[A-Za-z0-9-]+$")) {
-			ds = new Datastore(si.getServerConnection(),stringToMor(datastore));
-		} else {
-			ds = (Datastore) navigator.searchManagedEntity("Datastore",datastore);
-		}
-		if (ds==null) {
-			throw new Exception("Provided datastore not found.");
-		}
-		// Search the resource pool
-		ResourcePool rp = null;
+        // resource pool
+		ManagedObjectReference rp_ref = null;
 		if (resourcepool.matches("^ResourcePool:[A-Za-z0-9-]+$")) {
-			rp = new ResourcePool(si.getServerConnection(),stringToMor(resourcepool));
+			rp_ref = stringToMor(resourcepool);
 		} else { 
-			rp = (ResourcePool) navigator.searchManagedEntity("ResourcePool",resourcepool);
+			ResourcePool rp = (ResourcePool) navigator.searchManagedEntity("ResourcePool",resourcepool);
+			rp_ref = rp.getMOR();
 		}
-		if (rp==null) {
+		if (rp_ref == null) {
 			throw new Exception("Provided resourcepool not found.");
 		}
 		// Search for the right folder
@@ -249,9 +238,9 @@ public class DeployCustomVM implements IAction {
 		}
 		*/
 		// let's search folder style... (plus no search if managed object rovided)
-		Folder fld = null;
+		ManagedObjectReference fld_ref = null;
 		if (folder.matches("^Folder:[A-Za-z0-9-]+$")) {
-			fld = new Folder(si.getServerConnection(),stringToMor(folder));
+			fld_ref = stringToMor(folder);
 		} else {
 			Folder searched = rootFolder;
 			String[] folders = folder.split("/");
@@ -272,10 +261,29 @@ public class DeployCustomVM implements IAction {
 					break;
 				}
 			}
-			fld = searched;
+			fld_ref = searched.getMOR();
 		}
-		if (fld==null) {
+		if (fld_ref==null) {
 			throw new Exception("Provided folder not found.");
+		}
+		// Search for specified datastore
+		ManagedObjectReference pod_ref = null;
+		ManagedObjectReference ds_ref = null;
+		if (datastore.matches("^Datastore:[A-Za-z0-9-]+$")) {
+			ds_ref = stringToMor(datastore);
+		} else if (datastore.matches("^StoragePod:[A-Za-z0-9]+$")) {
+			pod_ref = stringToMor(datastore);
+		} else {
+			Datastore ds = (Datastore) navigator.searchManagedEntity("Datastore",datastore);
+			if (ds != null) {
+				ds_ref = ds.getMOR();
+			} else {
+				StoragePod pod = (StoragePod) navigator.searchManagedEntity("StoragePod", datastore);
+				pod_ref = pod.getMOR();
+			}
+		}
+		if (ds_ref==null && pod_ref==null) {
+			throw new Exception("Provided datastore or datastore cluster not found.");
 		}
 		// Get the customization spec manager
 		CustomizationSpecManager customSpecMgr = si.getCustomizationSpecManager();
@@ -285,7 +293,7 @@ public class DeployCustomVM implements IAction {
 			throw new Exception("Provided Customization specification not found.");
 		}
 		// Set the provisionning type
-		Boolean thinProvisioned = provisionning.equals("thin");
+		Boolean thinProvisioned = "thin".equals(provisionning);
 		// Parameters Object Set
 		// Build the clone specification
 		VirtualMachineCloneSpec cloneSpec = new VirtualMachineCloneSpec();
@@ -295,45 +303,8 @@ public class DeployCustomVM implements IAction {
 		cloneSpec.powerOn = false;
 		// Set the parameters for the VM destination
 		cloneSpec.location =  new VirtualMachineRelocateSpec();
-		// Set the datastore
-		cloneSpec.location.datastore = ds.getMOR();
 		// Set the resourcepool
-		cloneSpec.location.pool = rp.getMOR();
-		/*
-		 * Does not work :-(
-		 * Switching to deprecated transform property
-		// Set the provisionning type (per device)
-		// empty array of template disks
-		ArrayList<VirtualDevice> hardDisks = new ArrayList<VirtualDevice>();
-		// parse all devices of the template
-		for (VirtualDevice device : vm.getConfig().hardware.device) {
-			// if device is a disk
-			if (VirtualDisk.class.isAssignableFrom(device.getClass())) {
-				// add it to the disk array
-				hardDisks.add(device);
-			}
-		}
-		// Create the disk relocation array
-		cloneSpec.location.disk = new VirtualMachineRelocateSpecDiskLocator[hardDisks.size()];
-		for (int i = 0; i < hardDisks.size(); i++) {
-			// Create the Disk locator object
-			cloneSpec.location.disk[i] = new VirtualMachineRelocateSpecDiskLocator();
-			// Set the Disk ID
-			cloneSpec.location.disk[i].diskId = hardDisks.get(i).key;
-			// Set the target Datastore
-			cloneSpec.location.disk[i].datastore = ds.getMOR();
-			// Create the diskBacking Object
-			VirtualDiskFlatVer2BackingInfo diskBackingInfo = new VirtualDiskFlatVer2BackingInfo();
-			// Set the backing type
-			diskBackingInfo.thinProvisioned = thinProvisioned;
-			// Set the disk mode
-			diskBackingInfo.diskMode = "persistent";
-			// Set the datastore
-			diskBackingInfo.datastore = ds.getMOR();
-			// Add the information to the spec
-			cloneSpec.location.disk[i].diskBackingInfo = diskBackingInfo;
-		} 
-		*/
+		cloneSpec.location.pool = rp_ref;
 		// Set the transform parameter
 		if (thinProvisioned) {
 			cloneSpec.location.transform =  VirtualMachineRelocateTransformation.sparse;
@@ -348,8 +319,43 @@ public class DeployCustomVM implements IAction {
 		// reset annotation
 		cloneSpec.config =  new VirtualMachineConfigSpec();
 		cloneSpec.config.annotation = "";
-		//Start the clone
-		Task task = vm.cloneVM_Task(fld, name, cloneSpec);
+		Task task = null;
+		if (ds_ref!=null) {
+			// Set the datastore
+			cloneSpec.location.datastore = ds_ref;
+			//Start the clone
+			VirtualMachine vm = new VirtualMachine(si.getServerConnection(),vm_ref);
+			Folder fld = new Folder(si.getServerConnection(),fld_ref);
+			task = vm.cloneVM_Task(fld, name, cloneSpec);
+		} else if (pod_ref != null) {
+			// define the storage placement sepcifications;
+			StoragePlacementSpec storageSpec = new StoragePlacementSpec();
+			// set the name of the destination virtual machine
+			storageSpec.cloneName = name;
+			// Clone template to a new virtual machine
+			storageSpec.type = "clone";
+			// Deploy Virtual Machine in destination folder
+			storageSpec.folder = fld_ref;
+			// Select the storage pod to deplot to.
+			storageSpec.podSelectionSpec = new StorageDrsPodSelectionSpec();
+			storageSpec.podSelectionSpec.storagePod = pod_ref;
+			// Set the clone sepecifications
+			storageSpec.cloneSpec = cloneSpec;
+			storageSpec.vm = vm_ref;
+			// Get the storage manager
+			StorageResourceManager storageManager = new StorageResourceManager(si.getServerConnection(), si.getServiceContent().getStorageResourceManager());
+			// Get the storage recommendation
+			StoragePlacementResult recommendation = storageManager.recommendDatastores(storageSpec);
+			if (recommendation.recommendations.length <= 0) {
+				throw new Exception("No storage recommandation provided");
+			}
+            String[] recommendationKey = new String[1];
+			recommendationKey[0] = recommendation.recommendations[0].key;
+			// Deploy the virtual machine
+			task = storageManager.applyStorageDrsRecommendation_Task(recommendationKey); 
+		} else {
+			throw new Exception("Neither datastore not datastore deployement detected.");
+		}
 		si.getServerConnection().logout();
 		//OO will fail if he must wait for task completion...
 		//It can monitor the task status
