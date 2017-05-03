@@ -212,10 +212,6 @@ public class UpdateVMHardware implements IAction {
 		ArrayList<VirtualDeviceConfigSpec> devConfSpecs = new ArrayList<VirtualDeviceConfigSpec>();
 		// Update the portgroup if needed
 		if (portgroup!=null) {
-			ManagedEntity[] networks = navigator.searchManagedEntities("DistributedVirtualPortgroup");
-			for (int i = 0; i <= networks.length; i++) {
-				System.out.println(networks[i].getName());
-			}
 			Network pg = (Network) navigator.searchManagedEntity("Network", portgroup);
 			if (pg==null) { throw new Exception("Provided port group not found"); }
 			VirtualDeviceConfigSpec devConfSpec = new VirtualDeviceConfigSpec();
