@@ -90,24 +90,37 @@ public class GetDatastoreCluster implements IAction {
 		// Connect to vCenter
 		ServiceInstance si = new ServiceInstance(url,username,password,true);
 		// Get the root Folder
-		Folder rootFolder = si.getRootFolder();
+		ManagedEntity rootFolder = si.getRootFolder();
 		// move the rootFolder to desired location
 		if (folders.length > 0) {
 			if (!folders[0].isEmpty()) {
-				int level = 0; 
 				String matched = "";
-				while (level < folders.length) {
+				for (String tfolder: folders) {
 					//search childs of current folder for next matching folders
-					ManagedEntity[] childs = rootFolder.getChildEntity();
-					for(ManagedEntity child: childs) {
-						if (child instanceof Folder && child.getName().equals(folders[level])) {
-							// match found
-							// update matched, level and set rootFolder
-							matched += "/" + folders[level++]; 
-							rootFolder = (Folder)child;
-							break;
+					Boolean found = false;
+					if (rootFolder instanceof Folder) {
+						ManagedEntity[] childs = ((Folder)rootFolder).getChildEntity();
+						for(ManagedEntity child: childs) {
+							if (child instanceof Folder && tfolder.equals(child.getName())) {
+								// match found
+								// update matched, level and set rootFolder
+								matched += "/" + tfolder; 
+								rootFolder = (Folder)child;
+								found = true;
+								break;
+							} else if (child instanceof Datacenter && tfolder.equals(child.getName())) {
+								matched += "/" + tfolder;
+								rootFolder = child;
+								found = true;
+								break;
+							} 
 						}
-					}
+					} else if (rootFolder instanceof Datacenter && tfolder.equals("datastore"))  {
+						matched += "/datastore";
+						rootFolder = ((Datacenter)rootFolder).getDatastoreFolder();
+						continue;
+					} 
+					if (found) { continue; }
 					matched = matched.replaceAll("/$|^/", "");
 					throw new Exception("Could not find folder '" + folder + "' matched '" + matched + "'" );
 				}
@@ -149,12 +162,13 @@ public class GetDatastoreCluster implements IAction {
 			long largestFreeSpace = 0;
 			//ManagedEntity[] childs = pod.getChildEntity();
 			//Gather informations about child Datastores
-			String[][] dstypeinfo = new String[1][5];
+			String[][] dstypeinfo = new String[1][6];
 			dstypeinfo[0][0] = "Datastore";
-			dstypeinfo[0][1] = "summary.freeSpace";
-			dstypeinfo[0][2] = "summary.capacity";
-			dstypeinfo[0][3] = "summary.maintenanceMode";
-			dstypeinfo[0][4] = "summary.accessible";
+			dstypeinfo[0][1] = "name";
+			dstypeinfo[0][2] = "summary.freeSpace";
+			dstypeinfo[0][3] = "summary.capacity";
+			dstypeinfo[0][4] = "summary.maintenanceMode";
+			dstypeinfo[0][5] = "summary.accessible";
 			// Get the inventory navigator
 			InventoryNavigator dsnavigator = new InventoryNavigator(pod);
 			ManagedEntity[] ds = dsnavigator.searchManagedEntities(dstypeinfo,true);
@@ -196,6 +210,9 @@ public class GetDatastoreCluster implements IAction {
 			ManagedEntity mo = pod;
 			while (mo!=null) {
 				path =  mo.getName() + "/" + path;
+				if (mo instanceof Datacenter) {
+					break;
+				}
 				mo = mo.getParent();
 			}
 			path = path.replaceAll("/$|^/","");
@@ -209,6 +226,7 @@ public class GetDatastoreCluster implements IAction {
 				+ "free:" + summary.getFreeSpace() + columnSeparator
 				+ "largestfree:" + largestFreeSpace + columnSeparator
 				+ "datastore:" + largestFree.getMOR().toString() + columnSeparator
+				+ "datastorename:" + largestFree.getName() + columnSeparator
 				+ "path:" + path;
 		}
 		// strip extra rowseparators
